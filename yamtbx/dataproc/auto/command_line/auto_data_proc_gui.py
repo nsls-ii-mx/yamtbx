@@ -176,6 +176,9 @@ merging {
 
 reverse_phi = true
  .type = bool
+split_hdf_miniset = true
+ .type = bool
+ .help = Whether or not minisets in hdf5 are treated individually.
 log_root = None
  .type = path
  .help = debug log directory
@@ -411,7 +414,7 @@ class BssJobs:
         # XXX what if include_dir has sub directories..
 
         for rd in include_dir:
-            for ds in dataset.find_data_sets(rd, skip_0=True, skip_symlinks=False):
+            for ds in dataset.find_data_sets(rd, skip_0=True, skip_symlinks=False, split_hdf_miniset=config.params.split_hdf_miniset):
                 tmpl, nr = ds[0], tuple(ds[1:3])
                 prefix = tmpl[:tmpl.index("_?" if "_?" in tmpl else "?")]
                     
@@ -536,6 +539,7 @@ class BssJobs:
         # Start batch job
         job = batchjob.Job(workdir, "xds_auto.sh", nproc=config.params.batch.nproc_each)
         job_str = """\
+cd "%(wd)s" || exit 1
 "%(exe)s" - <<+
 from yamtbx.dataproc.auto.command_line.run_all_xds_simple import run_from_args
 run_from_args([%(args)s])
@@ -543,7 +547,8 @@ for i in xrange(%(repeat)d-1):
  run_from_args([%(args)s, "mode=recycle"])
 +
 """ % dict(exe=sys.executable, args=",".join(map(lambda x: '"%s"'%x, opts)),
-           repeat=config.params.xds.repeat)
+           repeat=config.params.xds.repeat,
+           wd=os.path.abspath(workdir))
         
         job.write_script(job_str+"\n")
         
@@ -566,7 +571,7 @@ for i in xrange(%(repeat)d-1):
             return
 
         nproc_str = "nproc=%d"%config.params.batch.nproc_each
-        job_str = ""
+        job_str = 'cd "%s" || exit 1\n' % os.path.abspath(workdir)
         job_str += "dials.import template=%s image_range=%d,%d\n" % (job.filename.replace("?","#"),
                                                                      nr[0], nr[1])
         job_str += "dials.find_spots datablock.json global_threshold=200 %s\n" % nproc_str
