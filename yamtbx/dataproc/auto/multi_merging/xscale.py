@@ -12,6 +12,7 @@ from yamtbx.dataproc.pointless import Pointless
 from yamtbx.dataproc import blend_lcv
 from yamtbx import util
 import collections
+from iotbx.reflection_file_reader import any_reflection_file
 
 import os
 import glob
@@ -106,14 +107,21 @@ OUTPUT_FILE= xscale.hkl
         for f in files:
             if not os.path.isfile(f):
                 continue
-            for l in open(f):
-                if l.startswith("!SPACE_GROUP_NUMBER="):
-                    sg = l[l.index("=")+1:].strip()
-                if l.startswith("!UNIT_CELL_CONSTANTS="):
-                    cell = map(float, l[l.index("=")+1:].split())
-                    assert len(cell) == 6
-                    cells.append(cell)
-                    break
+            try:
+                symm =  any_reflection_file(f).as_miller_arrays()[0].crystal_symmetry()
+                sg = symm.space_group().type().number()
+                cell = symm.unit_cell().parameters()
+                cells.append(cell)
+                break
+            except:
+                for l in open(f):
+                    if l.startswith("!SPACE_GROUP_NUMBER="):
+                        sg = l[l.index("=")+1:].strip()
+                    if l.startswith("!UNIT_CELL_CONSTANTS="):
+                        cell = map(float, l[l.index("=")+1:].split())
+                        assert len(cell) == 6
+                        cells.append(cell)
+                        break
 
         if self.space_group is not None:
             sg = self.space_group.type().number()

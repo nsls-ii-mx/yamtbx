@@ -32,6 +32,7 @@ from yamtbx import util
 from cctbx.array_family import flex
 from cctbx import miller
 from libtbx.utils import null_out
+from iotbx.reflection_file_reader import any_reflection_file
 
 blend_comm = "blend"
 sg_to_cent = {1:"P",2:"P",3:"P",4:"P",5:"C",6:"P",7:"P",8:"C",9:"C",10:"P",\
@@ -72,7 +73,10 @@ def run_blend0R(wdir, xds_ascii_files, logout="blend0.log"):
     ofs_lst = open(os.path.join(wdir, "xds_lookup_table.txt"), "w")
     ofs_files = open(os.path.join(wdir, "NEW_list_of_files.dat"), "w") # Just to avoid error
     for i, xac in enumerate(xds_ascii_files):
-        symm = xds_ascii.XDS_ASCII(xac, read_data=False).symm
+        try:
+            symm = xds_ascii.XDS_ASCII(xac, read_data=False).symm
+        except:
+            symm =  any_reflection_file(xac).as_miller_arrays()[0].crystal_symmetry()
         cell = " ".join(map(lambda x: "%7.3f"%x, symm.unit_cell().parameters()))
         sgnum =   int(symm.space_group().type().number())
         ofs_lst.write("dataset_%.3d %s\n" % (i, xac))
@@ -88,8 +92,12 @@ def run_blend0R(wdir, xds_ascii_files, logout="blend0.log"):
 
     pathblend = "modules/yamtbx/blend/R/blend0.R"
     useNC = os.getenv("BLEND_USE_NCDIST","no")
+    useSF = os.getenv("BLEND_USE_SFDIST","no")
     if useNC != "no":
         pathblend = "modules/yamtbx/blend/R/blend0NC.R"
+
+    if useSF != "no":
+        pathblend = "modules/yamtbx/blend/R/blend0SF.R"
 
     util.call("Rscript", os.path.join(os.environ["PHENIX"], pathblend),
               wdir=wdir,
@@ -124,14 +132,21 @@ cat(JSON, file="dendro.json")
 def load_xds_data_only_indices(xac_files, d_min=None):
     miller_sets = {}
     for f in xac_files:
-        if xds_ascii.is_xds_ascii(f):
-            print "Loading", f
-            ms = xds_ascii.XDS_ASCII(f, i_only=True).as_miller_set()
+        try:
+            indices = []
+            miller_arrays = any_reflection_file(f).as_miller_arrays()
+            symm = miller_arrays[0].crystal_symmetry()
+            ms =  miller.set(crystal_symmetry=symm, indices=miller_arrays[0].indices(),anomalous_flag=False)
             miller_sets[f] = ms.resolution_filter(d_min=d_min)
-        elif integrate_hkl_as_flex.is_integrate_hkl(f):
-            print "Sorry, skipping", f
-        else:
-            print "Skipping unrecognized:", f
+        except:
+            if xds_ascii.is_xds_ascii(f):
+                print "Loading", f
+                ms = xds_ascii.XDS_ASCII(f, i_only=True).as_miller_set()
+                miller_sets[f] = ms.resolution_filter(d_min=d_min)
+            elif integrate_hkl_as_flex.is_integrate_hkl(f):
+                print "Sorry, skipping", f
+            else:
+                print "Skipping unrecognized:", f
     return miller_sets
 # load_xds_data_only_indices()
 

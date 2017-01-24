@@ -14,6 +14,7 @@ from yamtbx.dataproc.auto.blend import load_xds_data_only_indices
 import os
 import numpy
 import collections
+from math import sqrt
 
 def calc_cc(ari, arj):
   ari, arj = ari.common_sets(arj, assert_is_similar_symmetry=False)
@@ -23,6 +24,24 @@ def calc_cc(ari, arj):
   else:
       return float("nan"), ari.size()
 # calc_cc()
+
+def calc_sfdist(ari, arj):
+  size_ari = ari.size()
+  size_arj = arj.size()
+  ari, arj = ari.common_sets(arj, assert_is_similar_symmetry=False)
+  size_penalty = size_ari+size_arj-2*ari.size()
+  corr = flex.linear_correlation(ari.data(), arj.data())
+  if corr.is_well_defined():
+      distsq = 2. - 2.*corr.coefficient()
+      distsq = (ari.size()/(ari.size()+size_penalty))*distsq + (size_penalty/(ari.size()+size_penalty))
+      if (distsq > 2.):
+          distsq = 2.
+      if (distsq < 0.):
+          distsq = 0.  
+      return ((2.-distsq)/2.), ari.size()
+  else:
+      return float("nan"), ari.size()
+# calc_sfdist()
 
 def read_xac_files(xac_files, d_min=None, d_max=None, min_ios=None):
     arrays = collections.OrderedDict()
@@ -43,6 +62,10 @@ class CCClustering:
         self.arrays = read_xac_files(xac_files, d_min=d_min, d_max=d_max, min_ios=min_ios)
         self.wdir = wdir
         self.clusters = {}
+        self.use_sfdist = False
+        if os.getenv('BLEND_USE_SFDIST') != None:
+            if os.getenv('BLEND_USE_SFDIST') != "no":
+                self.use_sfdist = True
         
         if not os.path.exists(self.wdir): os.makedirs(self.wdir)
 
@@ -93,7 +116,10 @@ class CCClustering:
                 args.append((i,j))
            
         # Calc all CC
-        worker = lambda x: calc_cc(self.arrays.values()[x[0]], self.arrays.values()[x[1]])
+        if self.use_sfdist:
+            worker = lambda x: calc_sfdist(self.arrays.values()[x[0]], self.arrays.values()[x[1]])
+        else:
+            worker = lambda x: calc_cc(self.arrays.values()[x[0]], self.arrays.values()[x[1]])
         results = easy_mp.pool_map(fixed_func=worker,
                                    args=args,
                                    processes=nproc)

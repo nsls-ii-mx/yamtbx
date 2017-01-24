@@ -22,6 +22,7 @@ import iotbx.phil
 import libtbx.phil
 from libtbx.utils import multi_out
 from cctbx import sgtbx
+from iotbx.reflection_file_reader import any_reflection_file
 
 import os
 import sys
@@ -389,9 +390,12 @@ def run(params):
         try:
             symm = XDS_ASCII(xac, read_data=False).symm
         except:
-            print >>out, "Error in reading %s" % xac
-            print >>out, traceback.format_exc()
-            return
+            try:
+                symm = 	any_reflection_file(xac).as_miller_arrays()[0].crystal_symmetry()
+            except:
+                print >>out, "Error in reading %s" % xac
+                print >>out, traceback.format_exc()
+                return
         cells[xac] = symm.unit_cell().parameters()
         laue = symm.space_group().build_derived_reflection_intensity_group(False).info()
         laues.setdefault(str(laue),{}).setdefault(symm.space_group_info().type().number(), []).append(xac)
